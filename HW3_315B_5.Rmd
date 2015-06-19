@@ -1,0 +1,127 @@
+---
+title: "HW3_315B_5"
+author: "YAXUAN YANG"
+date: "May 22, 2015"
+output: html_document
+---
+5. Spam Email.
+```{r}
+library(nnet)
+#import data
+spam = read.csv("/Users/yaxuanyang/Desktop/STAT315B/HW/Data/Spam/Spam_Train.txt", head = F)
+spam.test = read.csv("/Users/yaxuanyang/Desktop/STAT315B/HW/Data/Spam/Spam.Test.txt", head = F) 
+rflabs<- c("make", "address", "all", "3d", "our", "over", "remove",
+          "internet","order", "mail", "receive", "will",
+          "people", "report", "addresses","free", "business",
+          "email", "you", "credit", "your", "font","000","money",
+          "hp", "hpl", "george", "650", "lab", "labs",
+          "telnet", "857", "data", "415", "85", "technology", "1999",
+          "parts","pm", "direct", "cs", "meeting", "original", "project",
+          "re","edu", "table", "conference", ";", "(", "[", "!", "$", "#",
+          "CAPAVE", "CAPMAX", "CAPTOT","type")
+#standarize predictors 
+for (i in 1:57){
+  spam[,i]<-scale(spam[,i], center = TRUE, scale = TRUE)
+  spam.test[,i]<-scale(spam.test[,i], center = TRUE, scale = TRUE)
+}
+train.set<-as.data.frame(cbind(spam[,-58],as.factor(spam[,58])))
+test.set<-as.data.frame(cbind(spam.test[,-58],as.factor(spam.test[,58])))
+# Names for predictors and response
+colnames(train.set)<-rflabs;colnames(test.set)<-rflabs
+#train and test
+train<-train.set[1:2100,];test<-train.set[2101:3067,]
+#choose weights starting values at random in the interval [-0.5,0.5]
+
+# nnet with one hidden layer
+m=seq(1:10)# number of hidden nodes;k = 1 + m*(2+length(train)-1);# number of parameter
+w0 <-rep(1,length(train[,1])); lamda0 <- 0; iter0 <- 300; range0 <- 0.5;
+nnet <- list(); nnets <- list(); 
+type<-as.numeric(test[,58])-1 
+ #S3 method for class 'formula', Wts is the initial parameter vector; w is weights of each obs in training set.
+for (i in 1:10){
+  for(j in 1:20){
+    nnet[[j]]<-nnet(type~.,weights = w0,data = train, size=m[i],range = range0, decay= lamda0, maxit= iter0)
+  }
+  nnets[[i]]<-nnet
+}
+save(nnets, file = "hw3_5_a_nnets.rda")
+#load("hw3_5_a_nnets.rda")
+fits <- list(); errors<- rep(0,20); meanerror <- rep(0,10); sderror <-rep(0,10)
+for(i in 1:10){
+  for(j in 1:20){
+    fits[[j]]<- as.numeric(predict(nnets[[i]][[j]],test[,-58],type="class"))
+    errors[j] <- sum((fits[[j]]-type) != 0)/length(type) # overall misclassification rate
+  }
+  meanerror[i] <- mean(errors)
+  sderror[i]<- sd(errors)
+} 
+m1<- which.min(meanerror) # # of hidden nodes in the best performing one-layer nnet model on test
+
+```
+
+The Spam_Train was divided into training and validation sets to build 1 hiddenlayer nnets models to classify spam emails.
+Test models using 20 runs with different random initial weights for 1 to 10 nodes respectively.
+
+The overall misclassification error was determined by the mean of errors of 20 runs.  I found that 6 nodes gives the best classification outcome on the validation set. 
+
+(b)
+```{r}
+lamda <- seq(0,1,0.1);
+# one hidden layer nnet with 6 hidden nodes 
+w0 <-rep(1,length(train[,1]));iter0 <- 300; range0 <- 0.5;
+nnet1 <- list(); nnets1 <- list(); repeats<-10
+type1<-as.numeric(test.set[,58])-1 
+ #S3 method for class 'formula', Wts is the initial parameter vector; w is weights of each obs in training set.
+for (i in 1:length(lamda)){
+  for(j in 1:repeats){
+    nnet1[[j]]<-nnet(type~.,weights = w0,data = train,size=m1,range = range0, decay= lamda[i], maxit= iter0)
+  }# 6 hidden nodes 
+  nnets1[[i]]<-nnet1
+}
+save(nnets1, file = "hw3_5_a_nnets1.rda")
+#load("hw3_5_a_nnets1.rda")
+fits <- list(); errors<- rep(0,20); meanerror <- rep(0,10); sderror <-rep(0,10)
+for (i in 1:length(lamda)){
+  for(j in 1:repeats){
+    fits[[j]]<- as.numeric(predict(nnets1[[i]][[j]],test.set[,-58],type="class"))
+    errors[j] <- sum((fits[[j]]-type1) != 0)/length(type1) # overall misclassification rate
+  }
+  meanerror[i] <- mean(errors)
+  sderror[i]<- sd(errors)
+} 
+lamda[which.min(meanerror)] # # of hidden nodes in the best performing one-layer nnet model on test
+min(meanerror)
+```
+Tune the model with different weight decay for parameters. Evaluate the model by average overall misclassification error of 10 runs with different initial weights. 
+
+I found the corresponding weight decay for parameters of 1 hidden layer with 6 nodes is 0.2.
+
+(c) spam filter
+```{r}
+# weights for spam is 0.02 and nonspam 0.8
+w1 <-rep(0,length(train[,1]))
+for (i in 1:length(w1)){
+  if(train[,58][i]==1){
+    w1[i]<-0.02
+  } else w1[i]<-0.8    
+}
+iter0 <- 300; range0 <- 0.5;
+filter2<-nnet(type~.,weights = w1, data = train, size=6,range = range0, decay= 0.2, maxit= iter0)
+fit2<-as.numeric(predict(filter2,test.set[,-58],type="class"))
+falseposi2<- sum(fit2 == 1 & type1 == 0)/sum(type1 == 0)
+falsenega2<-  sum(fit2 == 0 & type1 == 1)/sum(type1 == 1)
+# generate the spam filter by increasing threshold probabilty to be spam
+filter3<-nnet(type~.,weights = w0, data = train, size=6,range = range0, decay= 0.2, maxit= iter0+100)
+fit3raw<-as.numeric(predict(filter3,test.set[,-58],type="raw"))
+fit3<-rep(0,length(type1))
+for(i in 1: length(fit3)){
+  if(fit3raw[i] >= 0.968){
+    fit3[i]= 1
+  } else fit3[i]= 0
+}
+falseposi3<- sum(fit3 == 1 & type1 == 0)/sum(type1 == 0)
+falsenega3<-  sum(fit3 == 0 & type1 == 1)/sum(type1 == 1)
+```
+I used two approaches to implement the spam filter on Spam_Test.
+(1) sets different weigths for the outcome. Here, I used weights for spam is 0.02 and nonspam 0.8. The rate for misclassifing "good" emails is about 0.5%. 
+(2) adujst the threshold probability of being a spam. Here, I set the threshold probability of being spam is 0.968. And the rate of misclassifing "good" email is 0.87%.
